@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <ros2_control name="JidennaSystem" type="system">
+
+        <xacro:if value="$(arg is_sim)">
+            <hardware>
+                <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+            </hardware>
+        </xacro:if>
+
+        <xacro:unless value="$(arg is_sim)">
+            <hardware>
+                <plugin>jidenna_controller/JidennaArduinoHardware</plugin>
+                <param name="port">/dev/ttyUSB0</param>
+                <param name="baud">115200</param>
+                <param name="v_max">0.8</param>
+                <param name="w_max">3.0</param>
+                <param name="wheel_radius">0.0825</param>
+                <param name="wheel_separation">0.521</param>
+            </hardware>
+        </xacro:unless>
+
+        <joint name="left_wheel_joint">
+            <command_interface name="velocity">
+                <param name="min">-1.0</param>
+                <param name="max">1.0</param>
+            </command_interface>
+            <state_interface name="velocity"/>
+            <state_interface name="position"/>
+        </joint>
+
+        <joint name="right_wheel_joint">
+            <command_interface name="velocity">
+                <param name="min">-1.0</param>
+                <param name="max">1.0</param>
+            </command_interface>
+            <state_interface name="velocity"/>
+            <state_interface name="position"/>
+        </joint>
+
+    </ros2_control>
+
+</robot>

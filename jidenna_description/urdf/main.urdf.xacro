@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="AXLR">
+    <!-- <xacro:include filename="properties.urdf.xacro"/> -->
+    <xacro:include filename="core.urdf.xacro"/>
+    <xacro:include filename="imu.urdf.xacro"/>
+    <xacro:include filename="lidar.urdf.xacro"/>
+    <xacro:include filename="gazebo_properties.urdf.xacro"/>
+    <xacro:include filename="jidenna_ros2_control.urdf.xacro"/>
+</robot>

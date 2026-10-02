@@ -1,0 +1,10 @@
+<library path="jidenna_controller">
+  <class name="jidenna_controller/JidennaArduinoHardware"
+         type="jidenna_controller::JidennaArduinoHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ros2_control hardware interface for jidenna's Arduino Nano hoverboard
+      controller. Sends "v,w" ASCII commands and parses CSV telemetry.
+    </description>
+  </class>
+</library>
