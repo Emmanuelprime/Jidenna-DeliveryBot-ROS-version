@@ -79,9 +79,18 @@ def generate_launch_description():
         actions=[joint_state_broadcaster_spawner],
     )
 
+    rviz_node = Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2",
+            output="screen",
+            arguments=["-d", os.path.join(pkg_desc, "config", "display.rviz")],
+        )
+
     return LaunchDescription([
         robot_state_publisher,
         control_node,
         start_jsb_after_control,
         delay_diff_drive_after_jsb,
+        rviz_node,
     ])

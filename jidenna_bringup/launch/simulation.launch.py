@@ -81,10 +81,19 @@ def generate_launch_description():
         output="screen",
     )
 
+    rviz_node = Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2",
+                output="screen",
+                arguments=["-d", os.path.join(pkg_desc, "config", "display.rviz")],
+            )
+
     return LaunchDescription([
         gazebo,
         robot_state_publisher,
         spawn_entity,
         start_controllers_after_spawn,
         cmd_vel_relay,
+        rviz_node,
     ])
