@@ -5,6 +5,9 @@ from launch.event_handlers import OnProcessExit
 from launch.substitutions import Command
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import IncludeLaunchDescription
+
 
 
 def generate_launch_description():
@@ -87,10 +90,29 @@ def generate_launch_description():
             arguments=["-d", os.path.join(pkg_desc, "config", "display.rviz")],
         )
 
+    localization = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("jidenna_controller"),
+                "launch",
+                "localization.launch.py",
+            )
+        ),
+    )
+
+    start_localization_after_ctrl = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=diff_drive_controller_spawner,
+            on_exit=[localization],
+        )
+    )
+
+
     return LaunchDescription([
         robot_state_publisher,
         control_node,
         start_jsb_after_control,
         delay_diff_drive_after_jsb,
         rviz_node,
+        start_localization_after_ctrl,
     ])
