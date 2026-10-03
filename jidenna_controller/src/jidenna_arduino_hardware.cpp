@@ -209,6 +209,7 @@ JidennaArduinoHardware::write(const rclcpp::Time &, const rclcpp::Duration &)
 
   double v     = (vL + vR) * 0.5 * wheel_radius_;               // m/s
   double omega = (vR - vL) * wheel_radius_ / wheel_sep_;        // rad/s
+  omega = -omega;
 
   if (v >  v_max_) v =  v_max_;
   if (v < -v_max_) v = -v_max_;
