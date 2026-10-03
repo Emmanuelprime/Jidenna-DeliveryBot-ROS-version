@@ -352,8 +352,8 @@ void JidennaArduinoHardware::reader_loop()
         robot_y_  = vals[1];
         robot_th_ = vals[2];
         // vals[3]=vL (m/s), vals[4]=vR (m/s) — not stored; hw velocities are rad/s
-        hw_velocities_[0] = vals[5];   // wL rad/s
-        hw_velocities_[1] = vals[6];   // wR rad/s
+        hw_velocities_[0] = vals[6];   // wL rad/s
+        hw_velocities_[1] = vals[5];   // wR rad/s
         bat_v_    = vals[7];
         temp_c_   = vals[8];
         // vals[9]=fb_age, vals[10]=wd, vals[11]=or_count
