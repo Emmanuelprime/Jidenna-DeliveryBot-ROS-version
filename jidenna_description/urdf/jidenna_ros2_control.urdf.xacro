@@ -21,6 +21,7 @@
             </hardware>
         </xacro:unless>
 
+        <!-- ===================== Wheel joints ===================== -->
         <joint name="left_wheel_joint">
             <command_interface name="velocity">
                 <param name="min">-1.0</param>
@@ -38,6 +39,23 @@
             <state_interface name="velocity"/>
             <state_interface name="position"/>
         </joint>
+
+        <!-- ===================== IMU sensor ======================= -->
+        <!--
+          Note: <sensor> is a sibling of <joint>, not a child of <hardware>.
+          Only export it for real hardware (the sim's IMU comes from Gazebo).
+        -->
+        <xacro:unless value="$(arg is_sim)">
+            <sensor name="imu_sensor">
+                <state_interface name="orientation.x"/>
+                <state_interface name="orientation.y"/>
+                <state_interface name="orientation.z"/>
+                <state_interface name="orientation.w"/>
+                <state_interface name="angular_velocity.x"/>
+                <state_interface name="angular_velocity.y"/>
+                <state_interface name="angular_velocity.z"/>
+            </sensor>
+        </xacro:unless>
 
     </ros2_control>
 

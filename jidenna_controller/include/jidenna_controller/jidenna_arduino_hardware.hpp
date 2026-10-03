@@ -15,7 +15,10 @@
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "rclcpp/clock.hpp"
 #include "rclcpp/macros.hpp"
+#include "rclcpp/publisher.hpp"
+#include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+#include "sensor_msgs/msg/imu.hpp"
 
 namespace jidenna_controller
 {
@@ -57,6 +60,9 @@ private:
   void reader_loop();
   bool send_command(double v, double w);
 
+  // IMU publisher thread
+  void imu_publish_loop();
+
   // Config
   std::string port_;
   int         baud_         = 115200;
@@ -79,12 +85,28 @@ private:
   double      robot_th_  = 0.0;
   double      bat_v_     = 0.0;
   double      temp_c_    = 0.0;
-  double      imu_yaw_   = 0.0;
+  double      imu_yaw_   = 0.0;   // radians
   bool        have_data_ = false;
+
+  // IMU state (exposed via state interfaces + published on /imu/data)
+  double      imu_orientation_[4]        = {0.0, 0.0, 0.0, 1.0};  // x,y,z,w
+  double      imu_angular_velocity_[3]   = {0.0, 0.0, 0.0};       // rad/s
+
+  // Previous yaw for numerical differentiation of yaw rate
+  double      prev_imu_yaw_ = 0.0;
+  bool        prev_imu_yaw_valid_ = false;
 
   // Reader thread control
   std::thread       reader_thread_;
   std::atomic<bool> stop_reader_{false};
+
+  // IMU publish thread control
+  std::thread       imu_thread_;
+  std::atomic<bool> stop_imu_{false};
+
+  // ROS node / publisher for IMU (created in on_init)
+  rclcpp::Node::SharedPtr                 imu_node_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
   // Throttle clock for RCLCPP_*_THROTTLE macros
   rclcpp::Clock::SharedPtr clock_;
