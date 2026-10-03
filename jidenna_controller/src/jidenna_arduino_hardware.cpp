@@ -204,7 +204,7 @@ JidennaArduinoHardware::read(const rclcpp::Time &, const rclcpp::Duration & peri
 hardware_interface::return_type
 JidennaArduinoHardware::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  double vL = hw_commands_[0];   // left wheel rad/s
+  double vL = -hw_commands_[0];   // left wheel rad/s
   double vR = hw_commands_[1];   // right wheel rad/s
 
   double v     = (vL + vR) * 0.5 * wheel_radius_;               // m/s
@@ -351,7 +351,7 @@ void JidennaArduinoHardware::reader_loop()
         robot_y_  = vals[1];
         robot_th_ = vals[2];
         // vals[3]=vL (m/s), vals[4]=vR (m/s) — not stored; hw velocities are rad/s
-        hw_velocities_[0] = vals[5];   // wL rad/s
+        hw_velocities_[0] = -vals[5];   // wL rad/s
         hw_velocities_[1] = vals[6];   // wR rad/s
         bat_v_    = vals[7];
         temp_c_   = vals[8];
