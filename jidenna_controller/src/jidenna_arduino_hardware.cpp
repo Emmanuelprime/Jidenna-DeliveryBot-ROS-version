@@ -431,8 +431,8 @@ void JidennaArduinoHardware::imu_publish_loop()
       msg.orientation_covariance[4] = -1.0;
       msg.orientation_covariance[8] = 0.05;
 
-      msg.angular_velocity_covariance[0] = -1.0;
-      msg.angular_velocity_covariance[4] = -1.0;
+      msg.angular_velocity_covariance[0] = 1.0e6;
+      msg.angular_velocity_covariance[4] = 1.0e6;
       msg.angular_velocity_covariance[8] = 0.01;
 
       msg.linear_acceleration_covariance[0] = -1.0;
