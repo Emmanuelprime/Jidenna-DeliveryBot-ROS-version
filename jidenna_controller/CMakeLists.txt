@@ -50,6 +50,11 @@ install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS scripts/ydlidar_node.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME ydlidar_node
+)
+
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle)

@@ -13,6 +13,9 @@
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclpy</exec_depend>
   <depend>controller_manager</depend>
   <depend>diff_drive_controller</depend>
   <depend>joint_state_broadcaster</depend>
