@@ -86,9 +86,12 @@ JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
     }
   }
 
-  // ----- IMU publisher node -----
+  // ----- IMU publisher node + dedicated executor -----
   imu_node_ = std::make_shared<rclcpp::Node>("jidenna_imu_publisher");
   imu_pub_  = imu_node_->create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
+
+  imu_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  imu_executor_->add_node(imu_node_);
 
   RCLCPP_INFO(rclcpp::get_logger(kLogger),
     "Initialized: port=%s baud=%d v_max=%.2f w_max=%.2f r=%.3f L=%.3f",
@@ -118,11 +121,17 @@ JidennaArduinoHardware::on_activate(const rclcpp_lifecycle::State &)
   // Reset yaw-rate tracking so the first CSV sample doesn't produce a huge spike
   prev_imu_yaw_valid_ = false;
 
+  // Reader thread
   stop_reader_ = false;
   reader_thread_ = std::thread(&JidennaArduinoHardware::reader_loop, this);
 
+  // IMU publish thread
   stop_imu_ = false;
   imu_thread_ = std::thread(&JidennaArduinoHardware::imu_publish_loop, this);
+
+  // IMU executor spin thread
+  stop_imu_spin_ = false;
+  imu_spin_thread_ = std::thread(&JidennaArduinoHardware::imu_spin_loop, this);
 
   last_cmd_time_ = std::chrono::steady_clock::now();
   RCLCPP_INFO(rclcpp::get_logger(kLogger), "Activated");
@@ -145,6 +154,16 @@ JidennaArduinoHardware::on_deactivate(const rclcpp_lifecycle::State &)
     imu_thread_.join();
   }
 
+  stop_imu_spin_ = true;
+  if (imu_executor_)
+  {
+    imu_executor_->cancel();
+  }
+  if (imu_spin_thread_.joinable())
+  {
+    imu_spin_thread_.join();
+  }
+
   send_command(0.0, 0.0);
   RCLCPP_INFO(rclcpp::get_logger(kLogger), "Deactivated");
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -155,6 +174,7 @@ hardware_interface::CallbackReturn
 JidennaArduinoHardware::on_cleanup(const rclcpp_lifecycle::State &)
 {
   close_serial();
+  imu_executor_.reset();
   imu_pub_.reset();
   imu_node_.reset();
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -321,7 +341,7 @@ bool JidennaArduinoHardware::send_command(double v, double w)
 }
 
 // ------------------------------------------------------------------ //
-// Reader thread — parses CSV lines from Arduino.
+// Reader thread
 // ------------------------------------------------------------------ //
 void JidennaArduinoHardware::reader_loop()
 {
@@ -364,12 +384,11 @@ void JidennaArduinoHardware::reader_loop()
         robot_x_  = vals[0];
         robot_y_  = vals[1];
         robot_th_ = vals[2];
-        hw_velocities_[0] = vals[6];   // wL rad/s
-        hw_velocities_[1] = vals[5];   // wR rad/s
+        hw_velocities_[0] = vals[6];
+        hw_velocities_[1] = vals[5];
         bat_v_    = vals[7];
         temp_c_   = vals[8];
 
-        // ---- Yaw rate from CSV arrival timing ----
         double new_yaw = vals[12];
         if (prev_imu_yaw_valid_)
         {
@@ -402,7 +421,7 @@ void JidennaArduinoHardware::reader_loop()
 }
 
 // ------------------------------------------------------------------ //
-// IMU publish thread — publishes /imu/data at 50 Hz.
+// IMU publish thread
 // ------------------------------------------------------------------ //
 void JidennaArduinoHardware::imu_publish_loop()
 {
@@ -412,7 +431,6 @@ void JidennaArduinoHardware::imu_publish_loop()
     if (imu_pub_ && have_data_)
     {
       sensor_msgs::msg::Imu msg;
-      // Use the RCL_SYSTEM_TIME clock — always returns current wall time.
       msg.header.stamp    = clock_->now();
       msg.header.frame_id = "imu_link";
 
@@ -425,13 +443,13 @@ void JidennaArduinoHardware::imu_publish_loop()
       msg.angular_velocity.y = imu_angular_velocity_[1];
       msg.angular_velocity.z = imu_angular_velocity_[2];
 
-      msg.orientation_covariance[0] = -1.0;   // roll not provided
-      msg.orientation_covariance[4] = -1.0;   // pitch not provided
-      msg.orientation_covariance[8] = 0.05;   // yaw stddev ~0.22 rad
+      msg.orientation_covariance[0] = -1.0;
+      msg.orientation_covariance[4] = -1.0;
+      msg.orientation_covariance[8] = 0.05;
 
       msg.angular_velocity_covariance[0] = -1.0;
       msg.angular_velocity_covariance[4] = -1.0;
-      msg.angular_velocity_covariance[8] = 0.01;   // yaw rate stddev
+      msg.angular_velocity_covariance[8] = 0.01;
 
       msg.linear_acceleration_covariance[0] = -1.0;
       msg.linear_acceleration_covariance[4] = -1.0;
@@ -440,6 +458,22 @@ void JidennaArduinoHardware::imu_publish_loop()
       imu_pub_->publish(msg);
     }
     rate.sleep();
+  }
+}
+
+// ------------------------------------------------------------------ //
+// IMU executor spin thread — keeps the IMU node's middleware active so
+// published messages are actually delivered to subscribers.
+// ------------------------------------------------------------------ //
+void JidennaArduinoHardware::imu_spin_loop()
+{
+  while (!stop_imu_spin_ && rclcpp::ok())
+  {
+    if (imu_executor_)
+    {
+      imu_executor_->spin_some(std::chrono::milliseconds(50));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 }
 

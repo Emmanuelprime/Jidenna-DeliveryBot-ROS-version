@@ -14,6 +14,7 @@
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "rclcpp/clock.hpp"
+#include "rclcpp/executors/single_threaded_executor.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/publisher.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -60,8 +61,9 @@ private:
   void reader_loop();
   bool send_command(double v, double w);
 
-  // IMU publisher thread
+  // IMU publishing / spinning
   void imu_publish_loop();
+  void imu_spin_loop();
 
   // Config
   std::string port_;
@@ -72,11 +74,11 @@ private:
   double      wheel_sep_    = 0.521;
   int         serial_fd_    = -1;
 
-  // Joint state (must match URDF joint names)
+  // Joint state
   std::vector<std::string> joint_names_;
-  std::vector<double> hw_commands_;    // [left, right] rad/s (commanded)
-  std::vector<double> hw_positions_;   // integrated (fallback)
-  std::vector<double> hw_velocities_;  // [left, right] rad/s (measured)
+  std::vector<double> hw_commands_;
+  std::vector<double> hw_positions_;
+  std::vector<double> hw_velocities_;
 
   // Telemetry (populated by reader thread)
   std::mutex  data_mutex_;
@@ -88,13 +90,13 @@ private:
   double      imu_yaw_   = 0.0;   // radians
   bool        have_data_ = false;
 
-  // IMU state (exposed via state interfaces + published on /imu/data)
-  double      imu_orientation_[4]        = {0.0, 0.0, 0.0, 1.0};  // x,y,z,w
-  double      imu_angular_velocity_[3]   = {0.0, 0.0, 0.0};       // rad/s
+  // IMU state
+  double      imu_orientation_[4]        = {0.0, 0.0, 0.0, 1.0};
+  double      imu_angular_velocity_[3]   = {0.0, 0.0, 0.0};
 
-  // Yaw rate tracking — computed in the reader thread from CSV arrival timing
-  double      prev_imu_yaw_        = 0.0;
-  bool        prev_imu_yaw_valid_  = false;
+  // Yaw rate tracking
+  double      prev_imu_yaw_       = 0.0;
+  bool        prev_imu_yaw_valid_ = false;
   std::chrono::steady_clock::time_point prev_imu_yaw_time_;
 
   // Reader thread control
@@ -105,11 +107,16 @@ private:
   std::thread       imu_thread_;
   std::atomic<bool> stop_imu_{false};
 
-  // ROS node / publisher for IMU (created in on_init)
-  rclcpp::Node::SharedPtr                             imu_node_;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+  // IMU executor spin thread control
+  std::thread       imu_spin_thread_;
+  std::atomic<bool> stop_imu_spin_{false};
 
-  // System clock — always returns current wall time, safe to query from any thread
+  // ROS node / publisher / executor for IMU
+  rclcpp::Node::SharedPtr                               imu_node_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr   imu_pub_;
+  rclcpp::executors::SingleThreadedExecutor::SharedPtr  imu_executor_;
+
+  // System clock
   rclcpp::Clock::SharedPtr clock_;
 
   std::chrono::steady_clock::time_point last_cmd_time_;
