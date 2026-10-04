@@ -29,9 +29,8 @@ JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  // Persistent clocks
-  clock_     = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
-  ros_clock_ = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
+  // System clock — reflects wall time, safe from any thread.
+  clock_ = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
 
   auto get_param = [&](const std::string & name, const std::string & def) -> std::string {
     auto it = info_.hardware_parameters.find(name);
@@ -220,8 +219,8 @@ JidennaArduinoHardware::read(const rclcpp::Time &, const rclcpp::Duration & peri
     imu_orientation_[2] = std::sin(yaw * 0.5);
     imu_orientation_[3] = std::cos(yaw * 0.5);
 
-    // NOTE: yaw rate (imu_angular_velocity_[2]) is computed in reader_loop()
-    // based on CSV arrival timing — see comments there.
+    // Yaw rate (imu_angular_velocity_[2]) is computed in reader_loop()
+    // based on CSV arrival timing.
   }
 
   return hardware_interface::return_type::OK;
@@ -323,9 +322,6 @@ bool JidennaArduinoHardware::send_command(double v, double w)
 
 // ------------------------------------------------------------------ //
 // Reader thread — parses CSV lines from Arduino.
-//
-// CSV format (from the Arduino firmware):
-//   x,y,th,vL,vR,wL,wR,bat,temp,fb_age,wd,or,imu_yaw
 // ------------------------------------------------------------------ //
 void JidennaArduinoHardware::reader_loop()
 {
@@ -374,15 +370,11 @@ void JidennaArduinoHardware::reader_loop()
         temp_c_   = vals[8];
 
         // ---- Yaw rate from CSV arrival timing ----
-        // The CSV only updates at ~10 Hz (printPose runs every 100 ms).
-        // Differentiating in read() at 100 Hz would mostly produce zeros
-        // with brief spikes. Doing it here, timed by CSV arrival, gives
-        // one meaningful yaw-rate sample per CSV line, which we hold
-        // until the next one.
         double new_yaw = vals[12];
         if (prev_imu_yaw_valid_)
         {
-          double dt = std::chrono::duration<double>(now_tp - prev_imu_yaw_time_).count();
+          double dt = std::chrono::duration<double>(
+                        now_tp - prev_imu_yaw_time_).count();
           if (dt > 1e-3 && dt < 0.5)
           {
             double dyaw = new_yaw - prev_imu_yaw_;
@@ -391,8 +383,8 @@ void JidennaArduinoHardware::reader_loop()
             imu_angular_velocity_[2] = dyaw / dt;
           }
         }
-        prev_imu_yaw_      = new_yaw;
-        prev_imu_yaw_time_ = now_tp;
+        prev_imu_yaw_       = new_yaw;
+        prev_imu_yaw_time_  = now_tp;
         prev_imu_yaw_valid_ = true;
 
         imu_yaw_   = new_yaw;
@@ -420,9 +412,8 @@ void JidennaArduinoHardware::imu_publish_loop()
     if (imu_pub_ && have_data_)
     {
       sensor_msgs::msg::Imu msg;
-      // Use the shared ros_clock_ — imu_node_->now() returns stale time
-      // because imu_node_ isn't spun by any executor.
-      msg.header.stamp    = ros_clock_->now();
+      // Use the RCL_SYSTEM_TIME clock — always returns current wall time.
+      msg.header.stamp    = clock_->now();
       msg.header.frame_id = "imu_link";
 
       std::lock_guard<std::mutex> lock(data_mutex_);
@@ -434,18 +425,14 @@ void JidennaArduinoHardware::imu_publish_loop()
       msg.angular_velocity.y = imu_angular_velocity_[1];
       msg.angular_velocity.z = imu_angular_velocity_[2];
 
-      // Orientation covariance. -1 = "this field is not provided".
-      // MPU6050 yaw drifts, so we tell the EKF to distrust it a bit.
       msg.orientation_covariance[0] = -1.0;   // roll not provided
       msg.orientation_covariance[4] = -1.0;   // pitch not provided
       msg.orientation_covariance[8] = 0.05;   // yaw stddev ~0.22 rad
 
-      // Angular velocity covariance. Only yaw rate is meaningful.
       msg.angular_velocity_covariance[0] = -1.0;
       msg.angular_velocity_covariance[4] = -1.0;
       msg.angular_velocity_covariance[8] = 0.01;   // yaw rate stddev
 
-      // Linear acceleration not provided.
       msg.linear_acceleration_covariance[0] = -1.0;
       msg.linear_acceleration_covariance[4] = -1.0;
       msg.linear_acceleration_covariance[8] = -1.0;

@@ -109,9 +109,8 @@ private:
   rclcpp::Node::SharedPtr                             imu_node_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
-  // Clocks
-  rclcpp::Clock::SharedPtr clock_;      // for RCLCPP_*_THROTTLE macros
-  rclcpp::Clock::SharedPtr ros_clock_;  // for message timestamps
+  // System clock — always returns current wall time, safe to query from any thread
+  rclcpp::Clock::SharedPtr clock_;
 
   std::chrono::steady_clock::time_point last_cmd_time_;
 };
