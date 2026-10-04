@@ -100,10 +100,20 @@ def generate_launch_description():
         ),
     )
 
+    lidar = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("jidenna_controller"),
+                "launch",
+                "lidar.launch.py",
+            )
+        ),
+    )
+
     start_localization_after_ctrl = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=diff_drive_controller_spawner,
-            on_exit=[localization],
+            on_exit=[localization, lidar],
         )
     )
 
