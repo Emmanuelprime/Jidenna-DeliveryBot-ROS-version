@@ -20,10 +20,6 @@ namespace jidenna_controller
 static constexpr const char * kLogger = "JidennaArduinoHardware";
 
 // ------------------------------------------------------------------ //
-// on_init — read URDF <hardware><param> values, size vectors, verify
-//           each joint exposes a velocity command interface. Set up
-//           the IMU publisher node.
-// ------------------------------------------------------------------ //
 hardware_interface::CallbackReturn
 JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
 {
@@ -33,10 +29,10 @@ JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  // Create a persistent clock for RCLCPP_*_THROTTLE macros.
-  clock_ = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
+  // Persistent clocks
+  clock_     = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
+  ros_clock_ = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
 
-  // Safe param reader: value is a string; unknown key -> default
   auto get_param = [&](const std::string & name, const std::string & def) -> std::string {
     auto it = info_.hardware_parameters.find(name);
     return it != info_.hardware_parameters.end() ? it->second : def;
@@ -92,7 +88,6 @@ JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
   }
 
   // ----- IMU publisher node -----
-  // Created here so it's ready by the time read() starts producing data.
   imu_node_ = std::make_shared<rclcpp::Node>("jidenna_imu_publisher");
   imu_pub_  = imu_node_->create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
 
@@ -120,6 +115,9 @@ JidennaArduinoHardware::on_activate(const rclcpp_lifecycle::State &)
 {
   std::fill(hw_commands_.begin(), hw_commands_.end(), 0.0);
   send_command(0.0, 0.0);
+
+  // Reset yaw-rate tracking so the first CSV sample doesn't produce a huge spike
+  prev_imu_yaw_valid_ = false;
 
   stop_reader_ = false;
   reader_thread_ = std::thread(&JidennaArduinoHardware::reader_loop, this);
@@ -164,9 +162,6 @@ JidennaArduinoHardware::on_cleanup(const rclcpp_lifecycle::State &)
 }
 
 // ------------------------------------------------------------------ //
-// Export interfaces — controller_manager wires these into the
-// hardware_interface::ResourceManager.
-// ------------------------------------------------------------------ //
 std::vector<hardware_interface::StateInterface>
 JidennaArduinoHardware::export_state_interfaces()
 {
@@ -179,15 +174,13 @@ JidennaArduinoHardware::export_state_interfaces()
       hardware_interface::HW_IF_VELOCITY, &hw_velocities_[i]);
   }
 
-  // IMU state interfaces — names must match the <sensor name="imu_sensor">
-  // block in the URDF.
-  ifaces.emplace_back("imu_sensor", "orientation.x",        &imu_orientation_[0]);
-  ifaces.emplace_back("imu_sensor", "orientation.y",        &imu_orientation_[1]);
-  ifaces.emplace_back("imu_sensor", "orientation.z",        &imu_orientation_[2]);
-  ifaces.emplace_back("imu_sensor", "orientation.w",        &imu_orientation_[3]);
-  ifaces.emplace_back("imu_sensor", "angular_velocity.x",   &imu_angular_velocity_[0]);
-  ifaces.emplace_back("imu_sensor", "angular_velocity.y",   &imu_angular_velocity_[1]);
-  ifaces.emplace_back("imu_sensor", "angular_velocity.z",   &imu_angular_velocity_[2]);
+  ifaces.emplace_back("imu_sensor", "orientation.x",      &imu_orientation_[0]);
+  ifaces.emplace_back("imu_sensor", "orientation.y",      &imu_orientation_[1]);
+  ifaces.emplace_back("imu_sensor", "orientation.z",      &imu_orientation_[2]);
+  ifaces.emplace_back("imu_sensor", "orientation.w",      &imu_orientation_[3]);
+  ifaces.emplace_back("imu_sensor", "angular_velocity.x", &imu_angular_velocity_[0]);
+  ifaces.emplace_back("imu_sensor", "angular_velocity.y", &imu_angular_velocity_[1]);
+  ifaces.emplace_back("imu_sensor", "angular_velocity.z", &imu_angular_velocity_[2]);
 
   return ifaces;
 }
@@ -205,11 +198,6 @@ JidennaArduinoHardware::export_command_interfaces()
 }
 
 // ------------------------------------------------------------------ //
-// read — called every controller_manager cycle.
-// Integrates joint positions from the latest measured velocities,
-// computes the IMU quaternion + yaw rate, and refreshes the imu_node_
-// so the ROS 2 spin gets serviced.
-// ------------------------------------------------------------------ //
 hardware_interface::return_type
 JidennaArduinoHardware::read(const rclcpp::Time &, const rclcpp::Duration & period)
 {
@@ -225,56 +213,29 @@ JidennaArduinoHardware::read(const rclcpp::Time &, const rclcpp::Duration & peri
       hw_positions_[1] += hw_velocities_[1] * dt;
     }
 
-    // --- IMU orientation (quaternion) from yaw ---
+    // IMU orientation (quaternion) from yaw
     double yaw = imu_yaw_;
     imu_orientation_[0] = 0.0;
     imu_orientation_[1] = 0.0;
     imu_orientation_[2] = std::sin(yaw * 0.5);
     imu_orientation_[3] = std::cos(yaw * 0.5);
 
-    // --- IMU angular velocity (yaw rate) by differentiation ---
-    if (prev_imu_yaw_valid_ && dt > 0.0 && dt < 0.5)
-    {
-      double dyaw = yaw - prev_imu_yaw_;
-      // wrap to [-pi, pi]
-      while (dyaw >  M_PI) dyaw -= 2.0 * M_PI;
-      while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
-      imu_angular_velocity_[2] = dyaw / dt;
-    }
-    else
-    {
-      imu_angular_velocity_[2] = 0.0;
-    }
-    prev_imu_yaw_ = yaw;
-    prev_imu_yaw_valid_ = true;
-
-    // x/y angular velocity are unknown from a single-axis estimate
-    imu_angular_velocity_[0] = 0.0;
-    imu_angular_velocity_[1] = 0.0;
-  }
-
-  // Give the IMU node a chance to process subscriptions/timers,
-  // so it doesn't rely on the caller to spin it.
-  if (imu_node_)
-  {
-    imu_node_->get_node_base_interface()->get_context();
+    // NOTE: yaw rate (imu_angular_velocity_[2]) is computed in reader_loop()
+    // based on CSV arrival timing — see comments there.
   }
 
   return hardware_interface::return_type::OK;
 }
 
 // ------------------------------------------------------------------ //
-// write — called every controller_manager cycle.
-// Converts joint angular velocities (rad/s) to (v, w) and sends text.
-// ------------------------------------------------------------------ //
 hardware_interface::return_type
 JidennaArduinoHardware::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  double vL = hw_commands_[0];   // left wheel rad/s
-  double vR = hw_commands_[1];   // right wheel rad/s
+  double vL = hw_commands_[0];
+  double vR = hw_commands_[1];
 
-  double v     = (vL + vR) * 0.5 * wheel_radius_;               // m/s
-  double omega = (vR - vL) * wheel_radius_ / wheel_sep_;        // rad/s
+  double v     = (vL + vR) * 0.5 * wheel_radius_;
+  double omega = (vR - vL) * wheel_radius_ / wheel_sep_;
 
   if (v >  v_max_) v =  v_max_;
   if (v < -v_max_) v = -v_max_;
@@ -291,8 +252,6 @@ JidennaArduinoHardware::write(const rclcpp::Time &, const rclcpp::Duration &)
   return hardware_interface::return_type::OK;
 }
 
-// ------------------------------------------------------------------ //
-// Serial helpers — POSIX, no external dependency
 // ------------------------------------------------------------------ //
 bool JidennaArduinoHardware::open_serial()
 {
@@ -403,15 +362,40 @@ void JidennaArduinoHardware::reader_loop()
 
       if (ok && vals.size() == 13)
       {
+        auto now_tp = std::chrono::steady_clock::now();
+
         std::lock_guard<std::mutex> lock(data_mutex_);
         robot_x_  = vals[0];
         robot_y_  = vals[1];
         robot_th_ = vals[2];
-        hw_velocities_[0] = vals[6];   // wL rad/s (CSV column swapped for our convention)
+        hw_velocities_[0] = vals[6];   // wL rad/s
         hw_velocities_[1] = vals[5];   // wR rad/s
         bat_v_    = vals[7];
         temp_c_   = vals[8];
-        imu_yaw_  = vals[12];          // radians
+
+        // ---- Yaw rate from CSV arrival timing ----
+        // The CSV only updates at ~10 Hz (printPose runs every 100 ms).
+        // Differentiating in read() at 100 Hz would mostly produce zeros
+        // with brief spikes. Doing it here, timed by CSV arrival, gives
+        // one meaningful yaw-rate sample per CSV line, which we hold
+        // until the next one.
+        double new_yaw = vals[12];
+        if (prev_imu_yaw_valid_)
+        {
+          double dt = std::chrono::duration<double>(now_tp - prev_imu_yaw_time_).count();
+          if (dt > 1e-3 && dt < 0.5)
+          {
+            double dyaw = new_yaw - prev_imu_yaw_;
+            while (dyaw >  M_PI) dyaw -= 2.0 * M_PI;
+            while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
+            imu_angular_velocity_[2] = dyaw / dt;
+          }
+        }
+        prev_imu_yaw_      = new_yaw;
+        prev_imu_yaw_time_ = now_tp;
+        prev_imu_yaw_valid_ = true;
+
+        imu_yaw_   = new_yaw;
         have_data_ = true;
       }
 
@@ -426,7 +410,7 @@ void JidennaArduinoHardware::reader_loop()
 }
 
 // ------------------------------------------------------------------ //
-// IMU publish thread — publishes /imu/data at ~50 Hz.
+// IMU publish thread — publishes /imu/data at 50 Hz.
 // ------------------------------------------------------------------ //
 void JidennaArduinoHardware::imu_publish_loop()
 {
@@ -436,7 +420,9 @@ void JidennaArduinoHardware::imu_publish_loop()
     if (imu_pub_ && have_data_)
     {
       sensor_msgs::msg::Imu msg;
-      msg.header.stamp    = imu_node_->now();
+      // Use the shared ros_clock_ — imu_node_->now() returns stale time
+      // because imu_node_ isn't spun by any executor.
+      msg.header.stamp    = ros_clock_->now();
       msg.header.frame_id = "imu_link";
 
       std::lock_guard<std::mutex> lock(data_mutex_);
@@ -448,16 +434,18 @@ void JidennaArduinoHardware::imu_publish_loop()
       msg.angular_velocity.y = imu_angular_velocity_[1];
       msg.angular_velocity.z = imu_angular_velocity_[2];
 
-      // Orientation covariance: MPU6050 yaw drifts, so mark it as not
-      // completely trustworthy. Diagonal entry for the yaw axis.
-      msg.orientation_covariance[0] = -1.0;   // roll unknown
-      msg.orientation_covariance[4] = -1.0;   // pitch unknown
-      msg.orientation_covariance[8] = 0.05;   // yaw ~ stddev 0.22 rad
+      // Orientation covariance. -1 = "this field is not provided".
+      // MPU6050 yaw drifts, so we tell the EKF to distrust it a bit.
+      msg.orientation_covariance[0] = -1.0;   // roll not provided
+      msg.orientation_covariance[4] = -1.0;   // pitch not provided
+      msg.orientation_covariance[8] = 0.05;   // yaw stddev ~0.22 rad
 
+      // Angular velocity covariance. Only yaw rate is meaningful.
       msg.angular_velocity_covariance[0] = -1.0;
       msg.angular_velocity_covariance[4] = -1.0;
       msg.angular_velocity_covariance[8] = 0.01;   // yaw rate stddev
 
+      // Linear acceleration not provided.
       msg.linear_acceleration_covariance[0] = -1.0;
       msg.linear_acceleration_covariance[4] = -1.0;
       msg.linear_acceleration_covariance[8] = -1.0;

@@ -92,9 +92,10 @@ private:
   double      imu_orientation_[4]        = {0.0, 0.0, 0.0, 1.0};  // x,y,z,w
   double      imu_angular_velocity_[3]   = {0.0, 0.0, 0.0};       // rad/s
 
-  // Previous yaw for numerical differentiation of yaw rate
-  double      prev_imu_yaw_ = 0.0;
-  bool        prev_imu_yaw_valid_ = false;
+  // Yaw rate tracking — computed in the reader thread from CSV arrival timing
+  double      prev_imu_yaw_        = 0.0;
+  bool        prev_imu_yaw_valid_  = false;
+  std::chrono::steady_clock::time_point prev_imu_yaw_time_;
 
   // Reader thread control
   std::thread       reader_thread_;
@@ -105,11 +106,12 @@ private:
   std::atomic<bool> stop_imu_{false};
 
   // ROS node / publisher for IMU (created in on_init)
-  rclcpp::Node::SharedPtr                 imu_node_;
+  rclcpp::Node::SharedPtr                             imu_node_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
-  // Throttle clock for RCLCPP_*_THROTTLE macros
-  rclcpp::Clock::SharedPtr clock_;
+  // Clocks
+  rclcpp::Clock::SharedPtr clock_;      // for RCLCPP_*_THROTTLE macros
+  rclcpp::Clock::SharedPtr ros_clock_;  // for message timestamps
 
   std::chrono::steady_clock::time_point last_cmd_time_;
 };
