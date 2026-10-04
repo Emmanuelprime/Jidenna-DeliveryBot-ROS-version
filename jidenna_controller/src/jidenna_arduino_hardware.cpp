@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
+#include "rclcpp/qos.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 namespace jidenna_controller
@@ -88,7 +89,14 @@ JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
 
   // ----- IMU publisher node + dedicated executor -----
   imu_node_ = std::make_shared<rclcpp::Node>("jidenna_imu_publisher");
-  imu_pub_  = imu_node_->create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
+
+  // QoS: use SensorDataQoS (BEST_EFFORT, depth 5). This is what
+  // robot_localization subscribes with. A RELIABLE publisher is
+  // incompatible with a BEST_EFFORT subscriber in ROS 2 — the
+  // subscriber connects at the DDS level but no data flows.
+  imu_pub_ = imu_node_->create_publisher<sensor_msgs::msg::Imu>(
+      "imu/data",
+      rclcpp::SensorDataQoS());
 
   imu_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
   imu_executor_->add_node(imu_node_);
@@ -118,18 +126,14 @@ JidennaArduinoHardware::on_activate(const rclcpp_lifecycle::State &)
   std::fill(hw_commands_.begin(), hw_commands_.end(), 0.0);
   send_command(0.0, 0.0);
 
-  // Reset yaw-rate tracking so the first CSV sample doesn't produce a huge spike
   prev_imu_yaw_valid_ = false;
 
-  // Reader thread
   stop_reader_ = false;
   reader_thread_ = std::thread(&JidennaArduinoHardware::reader_loop, this);
 
-  // IMU publish thread
   stop_imu_ = false;
   imu_thread_ = std::thread(&JidennaArduinoHardware::imu_publish_loop, this);
 
-  // IMU executor spin thread
   stop_imu_spin_ = false;
   imu_spin_thread_ = std::thread(&JidennaArduinoHardware::imu_spin_loop, this);
 
@@ -143,26 +147,14 @@ hardware_interface::CallbackReturn
 JidennaArduinoHardware::on_deactivate(const rclcpp_lifecycle::State &)
 {
   stop_reader_ = true;
-  if (reader_thread_.joinable())
-  {
-    reader_thread_.join();
-  }
+  if (reader_thread_.joinable()) reader_thread_.join();
 
   stop_imu_ = true;
-  if (imu_thread_.joinable())
-  {
-    imu_thread_.join();
-  }
+  if (imu_thread_.joinable()) imu_thread_.join();
 
   stop_imu_spin_ = true;
-  if (imu_executor_)
-  {
-    imu_executor_->cancel();
-  }
-  if (imu_spin_thread_.joinable())
-  {
-    imu_spin_thread_.join();
-  }
+  if (imu_executor_) imu_executor_->cancel();
+  if (imu_spin_thread_.joinable()) imu_spin_thread_.join();
 
   send_command(0.0, 0.0);
   RCLCPP_INFO(rclcpp::get_logger(kLogger), "Deactivated");
@@ -232,15 +224,11 @@ JidennaArduinoHardware::read(const rclcpp::Time &, const rclcpp::Duration & peri
       hw_positions_[1] += hw_velocities_[1] * dt;
     }
 
-    // IMU orientation (quaternion) from yaw
     double yaw = imu_yaw_;
     imu_orientation_[0] = 0.0;
     imu_orientation_[1] = 0.0;
     imu_orientation_[2] = std::sin(yaw * 0.5);
     imu_orientation_[3] = std::cos(yaw * 0.5);
-
-    // Yaw rate (imu_angular_velocity_[2]) is computed in reader_loop()
-    // based on CSV arrival timing.
   }
 
   return hardware_interface::return_type::OK;
@@ -341,8 +329,6 @@ bool JidennaArduinoHardware::send_command(double v, double w)
 }
 
 // ------------------------------------------------------------------ //
-// Reader thread
-// ------------------------------------------------------------------ //
 void JidennaArduinoHardware::reader_loop()
 {
   std::string line;
@@ -421,8 +407,6 @@ void JidennaArduinoHardware::reader_loop()
 }
 
 // ------------------------------------------------------------------ //
-// IMU publish thread
-// ------------------------------------------------------------------ //
 void JidennaArduinoHardware::imu_publish_loop()
 {
   rclcpp::Rate rate(50.0);
@@ -461,9 +445,6 @@ void JidennaArduinoHardware::imu_publish_loop()
   }
 }
 
-// ------------------------------------------------------------------ //
-// IMU executor spin thread — keeps the IMU node's middleware active so
-// published messages are actually delivered to subscribers.
 // ------------------------------------------------------------------ //
 void JidennaArduinoHardware::imu_spin_loop()
 {
