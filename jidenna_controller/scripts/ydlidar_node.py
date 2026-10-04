@@ -104,8 +104,9 @@ class YDLidarNode(Node):
         scan_msg.intensities = [0.0] * num_ranges
 
         for point in scan.points:
+            ros_angle = -point.angle
             index = int(
-                (point.angle - scan_msg.angle_min)
+                (ros_angle - scan_msg.angle_min)
                 / scan_msg.angle_increment)
             if 0 <= index < num_ranges:
                 scan_msg.ranges[index] = point.range
