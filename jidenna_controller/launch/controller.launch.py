@@ -67,5 +67,5 @@ def generate_launch_description():
         joint_state_broadcaster_spawner,
         delay_diff_drive_after_jsb,
         # velocity_controller_spawner,
-        joy_node,
+        # joy_node,
     ])

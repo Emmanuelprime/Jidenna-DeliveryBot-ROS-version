@@ -110,6 +110,17 @@ def generate_launch_description():
         ),
     )
 
+    joystick = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(
+                    get_package_share_directory("jidenna_controller"),
+                    "launch",
+                    "joystick.launch.py",
+                )
+            ),
+        )
+    
+
     start_localization_after_ctrl = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=diff_drive_controller_spawner,
@@ -125,4 +136,5 @@ def generate_launch_description():
         delay_diff_drive_after_jsb,
         rviz_node,
         start_localization_after_ctrl,
+        joystick,
     ])

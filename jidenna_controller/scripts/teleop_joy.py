@@ -131,6 +131,7 @@ class JoystickUdpNode(Node):
         msg = Twist()
         msg.linear.x  = lin
         msg.angular.z = ang
+        self.get_logger().debug(f"Publishing cmd_vel: linear={lin:.3f}, angular={ang:.3f}")
         self.pub.publish(msg)
 
     # ---------------------------------------------------------------- #
