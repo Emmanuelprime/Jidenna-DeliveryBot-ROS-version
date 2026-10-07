@@ -55,7 +55,7 @@ install(PROGRAMS scripts/ydlidar_node.py
   RENAME ydlidar_node
 )
 
-install(PROGRAMS scripts/teleop_joy.py
+install(PROGRAMS ${PROJECT_NAME}/teleop_joy.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME teleop_joy
 )
