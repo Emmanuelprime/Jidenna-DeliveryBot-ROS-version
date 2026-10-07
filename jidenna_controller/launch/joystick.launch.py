@@ -6,7 +6,7 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package="jidenna_controller",
-            executable="teleop_joy.py",
+            executable="teleop_joy",
             name="teleop_joy",
             output="screen",
             parameters=[{
