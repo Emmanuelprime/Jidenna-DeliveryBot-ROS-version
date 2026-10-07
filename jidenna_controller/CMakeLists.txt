@@ -51,6 +51,7 @@ install(DIRECTORY launch config
 )
 
 install(PROGRAMS scripts/ydlidar_node.py
+  scripts/teleop_joy.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME ydlidar_node
 )

@@ -37,6 +37,25 @@ def generate_launch_description():
     #     output="screen",
     # )
 
+    joy_node =  Node(
+            package="jidenna_controller",
+            executable="teleop_joy.py",
+            name="joystick_udp",
+            output="screen",
+            parameters=[{
+                "udp_port": 4210,
+                "listen_address": "0.0.0.0",
+                "cmd_vel_topic": "/jidenna_ros_controller/cmd_vel_unstamped",
+                "publish_rate": 50.0,
+                "timeout_s": 0.5,
+                "max_linear": 0.6,       # m/s
+                "max_angular": 1.5,      # rad/s
+                "deadzone": 0.05,
+                "invert_linear": False,
+                "invert_angular": False,
+            }],
+        )
+
     delay_diff_drive_after_jsb = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=joint_state_broadcaster_spawner,
@@ -48,4 +67,5 @@ def generate_launch_description():
         joint_state_broadcaster_spawner,
         delay_diff_drive_after_jsb,
         # velocity_controller_spawner,
+        joy_node,
     ])
