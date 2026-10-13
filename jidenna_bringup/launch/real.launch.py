@@ -134,7 +134,7 @@ def generate_launch_description():
         control_node,
         start_jsb_after_control,
         delay_diff_drive_after_jsb,
-        # rviz_node,
+        rviz_node,
         start_localization_after_ctrl,
         joystick,
     ])
