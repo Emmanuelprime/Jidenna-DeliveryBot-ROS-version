@@ -8,9 +8,14 @@ Listens on UDP port 4210 for JSON packets from the ESP32 joystick:
 Publishes:
     /jidenna_ros_controller/cmd_vel_unstamped  (geometry_msgs/Twist)
 
-Safety:
-    If no packet is received for `timeout_s`, publishes zero velocity and
-    stops. This matches the diff_drive_controller's own cmd_vel_timeout.
+Behavior:
+    Publishes ONLY while the joystick is actively sending packets.
+    When packets stop arriving (idle joystick, ESP32 off, WiFi drop),
+    the node goes silent. The diff_drive_controller's own
+    cmd_vel_timeout will then stop the robot automatically.
+
+    This design lets other cmd_vel sources (manual publish, Nav2, a
+    second joystick) coexist without fighting over the topic.
 """
 
 import json
@@ -33,10 +38,10 @@ class JoystickUdpNode(Node):
         self.declare_parameter("cmd_vel_topic",
                                "/jidenna_ros_controller/cmd_vel_unstamped")
         self.declare_parameter("publish_rate", 50.0)     # Hz
-        self.declare_parameter("timeout_s", 0.5)         # stop if no packet
+        self.declare_parameter("timeout_s", 0.5)         # go silent after this
         self.declare_parameter("max_linear", 0.6)        # m/s
         self.declare_parameter("max_angular", 1.5)       # rad/s
-        self.declare_parameter("deadzone", 0.05)         # ignore tiny stick values
+        self.declare_parameter("deadzone", 0.05)
         self.declare_parameter("invert_linear", False)
         self.declare_parameter("invert_angular", False)
 
@@ -56,6 +61,7 @@ class JoystickUdpNode(Node):
         self._last_rx_time  = 0.0
         self._linear        = 0.0
         self._angular       = 0.0
+        self._was_active    = False   # track state transitions for logging
 
         # ---- Publisher ----
         self.pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
@@ -123,15 +129,26 @@ class JoystickUdpNode(Node):
             lin = self._linear
             ang = self._angular
 
-        # Safety: if no packet received recently, stop.
-        if age > self.timeout_s:
-            lin = 0.0
-            ang = 0.0
+        active = (age <= self.timeout_s)
+
+        # Log state transitions (idle <-> active) once per change, not every tick
+        if active != self._was_active:
+            self._was_active = active
+            if active:
+                self.get_logger().info("Joystick active — taking over cmd_vel")
+            else:
+                self.get_logger().info(
+                    "Joystick idle — releasing cmd_vel "
+                    "(controller timeout will stop the robot)")
+
+        # KEY CHANGE: only publish while the joystick is actually active.
+        # When idle, stay silent so other cmd_vel sources can take over.
+        if not active:
+            return
 
         msg = Twist()
         msg.linear.x  = lin
         msg.angular.z = ang
-        self.get_logger().debug(f"Publishing cmd_vel: linear={lin:.3f}, angular={ang:.3f}")
         self.pub.publish(msg)
 
     # ---------------------------------------------------------------- #
