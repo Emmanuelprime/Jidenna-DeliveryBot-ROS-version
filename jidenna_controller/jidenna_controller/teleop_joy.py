@@ -5,6 +5,10 @@ UDP joystick receiver for jidenna.
 Listens on UDP port 4210 for JSON packets from the ESP32 joystick:
     {"t": <ms>, "lx": ..., "ly": ..., "rx": ..., "ry": ...}
 
+Control mapping:
+    ly  -> linear.x  (left stick Y: forward / backward)
+    rx  -> angular.z (right stick X: turn left / right)
+
 Publishes:
     /jidenna_ros_controller/cmd_vel_unstamped  (geometry_msgs/Twist)
 
@@ -37,11 +41,11 @@ class JoystickUdpNode(Node):
         self.declare_parameter("listen_address", "0.0.0.0")
         self.declare_parameter("cmd_vel_topic",
                                "/jidenna_ros_controller/cmd_vel_unstamped")
-        self.declare_parameter("publish_rate", 50.0)     # Hz
-        self.declare_parameter("timeout_s", 0.5)         # go silent after this
+        self.declare_parameter("publish_rate", 100.0)    # Hz — raised from 50
+        self.declare_parameter("timeout_s", 0.5)
         self.declare_parameter("max_linear", 0.6)        # m/s
-        self.declare_parameter("max_angular", 1.5)       # rad/s
-        self.declare_parameter("deadzone", 0.05)
+        self.declare_parameter("max_angular", 0.8)       # rad/s — lowered from 1.5
+        self.declare_parameter("deadzone", 0.3)
         self.declare_parameter("invert_linear", False)
         self.declare_parameter("invert_angular", False)
 
@@ -56,12 +60,12 @@ class JoystickUdpNode(Node):
         self.invert_linear    = self.get_parameter("invert_linear").value
         self.invert_angular   = self.get_parameter("invert_angular").value
 
-        # ---- State (updated by UDP thread, read by publish timer) ----
+        # ---- State ----
         self._lock = threading.Lock()
         self._last_rx_time  = 0.0
         self._linear        = 0.0
         self._angular       = 0.0
-        self._was_active    = False   # track state transitions for logging
+        self._was_active    = False
 
         # ---- Publisher ----
         self.pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
@@ -73,6 +77,9 @@ class JoystickUdpNode(Node):
         self.sock.settimeout(0.5)
         self.get_logger().info(
             f"Listening for joystick on UDP {self.listen_address}:{self.udp_port}")
+        self.get_logger().info(
+            f"Mapping: ly -> linear.x (max {self.max_linear} m/s), "
+            f"rx -> angular.z (max {self.max_angular} rad/s)")
 
         # ---- Threads ----
         self._stop = threading.Event()
@@ -96,7 +103,7 @@ class JoystickUdpNode(Node):
             try:
                 parsed = json.loads(data.decode("utf-8", errors="ignore"))
                 rx = float(parsed.get("rx", 0.0))
-                ry = float(parsed.get("ry", 0.0))
+                ly = float(parsed.get("ly", 0.0))
             except Exception as exc:
                 self.get_logger().warn(f"Bad UDP packet: {exc}",
                                        throttle_duration_sec=2.0)
@@ -105,12 +112,15 @@ class JoystickUdpNode(Node):
             # Deadzone
             if abs(rx) < self.deadzone:
                 rx = 0.0
-            if abs(ry) < self.deadzone:
-                ry = 0.0
+            if abs(ly) < self.deadzone:
+                ly = 0.0
 
-            # Map to linear/angular
-            lin = ry * self.max_linear
-            ang = -rx * self.max_angular    # joystick right = CW = negative z
+            # ---- Mapping ----
+            # ly -> linear.x   (push stick up = +ly = forward)
+            # rx -> angular.z  (push stick right = +rx; ROS +z = CCW,
+            #                    so we negate to make right = CW)
+            lin = ly * self.max_linear
+            ang = -rx * self.max_angular
 
             if self.invert_linear:
                 lin = -lin
@@ -131,7 +141,6 @@ class JoystickUdpNode(Node):
 
         active = (age <= self.timeout_s)
 
-        # Log state transitions (idle <-> active) once per change, not every tick
         if active != self._was_active:
             self._was_active = active
             if active:
@@ -141,8 +150,6 @@ class JoystickUdpNode(Node):
                     "Joystick idle — releasing cmd_vel "
                     "(controller timeout will stop the robot)")
 
-        # KEY CHANGE: only publish while the joystick is actually active.
-        # When idle, stay silent so other cmd_vel sources can take over.
         if not active:
             return
 
