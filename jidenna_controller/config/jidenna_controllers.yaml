@@ -30,7 +30,7 @@ jidenna_ros_controller:
     publish_limited_velocity: true
     publish_wheel_data: true
     enable_odom_tf: false           # <-- EKF publishes TF
-    open_loop: true                 # <-- bypass feedback gating
+    open_loop: false                 # <-- bypass feedback gating
 
     linear:
       x:
