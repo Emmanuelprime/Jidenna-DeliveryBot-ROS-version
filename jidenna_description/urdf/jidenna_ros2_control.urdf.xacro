@@ -12,7 +12,7 @@
         <xacro:unless value="$(arg is_sim)">
             <hardware>
                 <plugin>jidenna_controller/JidennaArduinoHardware</plugin>
-                <param name="port">/dev/ttyUSB0</param>
+                <param name="port">/dev/ttyArduino</param>
                 <param name="baud">115200</param>
                 <param name="v_max">0.8</param>
                 <param name="w_max">3.0</param>

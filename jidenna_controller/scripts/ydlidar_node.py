@@ -14,7 +14,7 @@ class YDLidarNode(Node):
     def __init__(self):
         super().__init__('ydlidar_prime_node')
 
-        self.declare_parameter('port', '/dev/ttyUSB1')
+        self.declare_parameter('port', '/dev/ttyLidar')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('frame_id', 'laser_frame')
         self.declare_parameter('scan_frequency', 10.0)

@@ -40,7 +40,7 @@ JidennaArduinoHardware::on_init(const hardware_interface::HardwareInfo & info)
 
   try
   {
-    port_         = get_param("port", "/dev/ttyUSB0");
+    port_         = get_param("port", "/dev/ttyArduino");
     baud_         = std::stoi(get_param("baud", "115200"));
     v_max_        = std::stod(get_param("v_max", "0.8"));
     w_max_        = std::stod(get_param("w_max", "3.0"));
