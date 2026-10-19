@@ -17,7 +17,7 @@ class YDLidarNode(Node):
         self.declare_parameter('port', '/dev/ttyLidar')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('frame_id', 'laser_frame')
-        self.declare_parameter('scan_frequency', 10.0)
+        self.declare_parameter('scan_frequency', 5.0)
         self.declare_parameter('sample_rate', 3)
         self.declare_parameter('min_angle', -180.0)
         self.declare_parameter('max_angle', 180.0)
